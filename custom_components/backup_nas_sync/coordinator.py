@@ -3,42 +3,38 @@
 Detects completed local Home Assistant backups (native backup, stored
 under ``<config>/backups`` for a plain HA Core Docker install - no
 Supervisor ``/backup`` mount on this project), transfers them to the
-NAS over SSH/SFTP, and verifies the transfer with a SHA-256 checksum
-computed on both sides. A failed or mismatched transfer never
-overwrites a previously valid NAS copy.
+NAS via the Synology FileStation API (``py-synologydsm-api``, the same
+library used by HA's native ``synology_dsm`` integration - reuses the
+proven DSM connectivity instead of a bespoke SSH credential), and
+verifies the transfer by downloading the copy back and comparing its
+SHA-256 checksum against the local source. A failed or mismatched
+transfer never leaves a file under the final backup filename.
 """
 from __future__ import annotations
 
 import hashlib
 import logging
-import shlex
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_AUTH_METHOD,
-    CONF_ENVIRONMENT,
-    CONF_HOST,
-    CONF_KEY_FILE,
     CONF_LOCAL_BACKUP_DIR,
-    CONF_PASSWORD,
-    CONF_PORT,
     CONF_POLL_INTERVAL,
     CONF_REMOTE_BASE_DIR,
     CONF_RETENTION_COUNT,
+    CONF_SITE_NAME,
     CONF_STABLE_SECONDS,
-    CONF_USERNAME,
-    AUTH_KEY_FILE,
+    CONF_SYNOLOGY_ENTRY_ID,
     DEFAULT_LOCAL_BACKUP_DIR,
     DEFAULT_POLL_INTERVAL,
-    DEFAULT_PORT,
     DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_RETENTION_COUNT,
     DEFAULT_STABLE_SECONDS,
@@ -53,6 +49,7 @@ from .const import (
     STATUS_OK,
     STORAGE_KEY_PREFIX,
     STORAGE_VERSION,
+    UPLOAD_SUFFIX,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -123,8 +120,8 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def remote_dir(self) -> str:
         base = self._config.get(CONF_REMOTE_BASE_DIR, DEFAULT_REMOTE_BASE_DIR)
-        environment = self._config[CONF_ENVIRONMENT]
-        return f"{base.rstrip('/')}/{environment}"
+        site_name = self._config[CONF_SITE_NAME]
+        return f"{base.rstrip('/')}/{site_name}"
 
     @property
     def stable_seconds(self) -> int:
@@ -144,17 +141,50 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_save_state(self) -> None:
         await self._store.async_save(self._state.as_dict())
 
+    # ------------------------------------------------------------------ #
+    # DSM client - reutilise la connexion deja authentifiee de l'entree
+    # synology_dsm choisie a la configuration (meme compte/session que
+    # l'integration native, aucun identifiant NAS gere par ce composant).
+    # ------------------------------------------------------------------ #
+
+    def _get_dsm_client(self):
+        entry = self.hass.config_entries.async_get_entry(self._config[CONF_SYNOLOGY_ENTRY_ID])
+        if entry is None:
+            raise BackupNasSyncError(
+                "l'entree synology_dsm associee a ete supprimee - reconfigurer le composant"
+            )
+        if entry.state != ConfigEntryState.LOADED:
+            raise BackupNasSyncError(
+                f"l'integration synology_dsm associee n'est pas chargee (etat: {entry.state})"
+            )
+        try:
+            return entry.runtime_data.api.dsm
+        except AttributeError as err:
+            raise BackupNasSyncError(
+                "structure interne de synology_dsm inattendue - version incompatible ?"
+            ) from err
+
+    # ------------------------------------------------------------------ #
+    # Coordinator update cycle
+    # ------------------------------------------------------------------ #
+
     async def _async_update_data(self) -> dict[str, Any]:
         await self._async_load_state()
+
         try:
-            result = await self.hass.async_add_executor_job(self._sync_cycle)
-        except Exception as err:  # noqa: BLE001 - never let a sync error kill the coordinator
-            _LOGGER.exception("backup_nas_sync: cycle de synchronisation en erreur")
-            result = {
-                "status": STATUS_ERROR,
-                "error": str(err),
-                "backup_name": self._state.last_synced_filename,
-            }
+            candidate = await self.hass.async_add_executor_job(self._find_next_candidate)
+        except BackupNasSyncError as err:
+            result = {"status": STATUS_ERROR, "error": str(err), "backup_name": None}
+        else:
+            if candidate is None:
+                result = {"status": self._state.last_status or STATUS_IDLE, "backup_name": None}
+            else:
+                filename, path, mtime = candidate
+                try:
+                    result = await self._sync_one(filename, path, mtime)
+                except Exception as err:  # noqa: BLE001 - never let a sync error kill the coordinator
+                    _LOGGER.exception("backup_nas_sync: cycle de synchronisation en erreur")
+                    result = {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
 
         previous_status = self._state.last_status
         new_status = result["status"]
@@ -176,6 +206,76 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "checksum_nas": result.get("checksum_nas"),
             "consecutive_failures": self._state.consecutive_failures,
             "error": result.get("error"),
+        }
+
+    async def _sync_one(self, filename: str, path: Path, mtime: float) -> dict[str, Any]:
+        retries = self._state.pending_retries.get(filename, 0)
+        if retries >= MAX_RETRIES_PER_FILE:
+            return {
+                "status": STATUS_ERROR,
+                "backup_name": filename,
+                "error": f"abandon apres {MAX_RETRIES_PER_FILE} tentatives",
+            }
+
+        remote_dir = self.remote_dir
+        temp_name = f"{filename}{UPLOAD_SUFFIX}"
+
+        try:
+            checksum_source, data = await self.hass.async_add_executor_job(
+                self._read_and_hash, path
+            )
+            api = self._get_dsm_client()
+
+            uploaded = await api.file.upload_file(
+                path=remote_dir, filename=temp_name, source=data, create_parents=True
+            )
+            if not uploaded:
+                raise BackupNasSyncError("upload temporaire refuse par le NAS")
+
+            checksum_nas = await self._download_and_hash(api, remote_dir, temp_name)
+        except BackupNasSyncError as err:
+            await self._safe_delete(remote_dir, temp_name)
+            self._state.pending_retries[filename] = retries + 1
+            return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
+
+        if checksum_source != checksum_nas:
+            await self._safe_delete(remote_dir, temp_name)
+            self._state.pending_retries[filename] = retries + 1
+            return {
+                "status": STATUS_ERROR,
+                "backup_name": filename,
+                "error": "checksum NAS different du checksum local (copie temporaire corrompue)",
+                "checksum_source": checksum_source,
+                "checksum_nas": checksum_nas,
+            }
+
+        # Round-trip verifie OK : place la copie sous son nom final (pas de
+        # rename cote API FileStation - un second upload des memes octets
+        # locaux, l'echec eventuel de cette etape ne touche jamais un backup
+        # different deja present sous son propre nom).
+        try:
+            uploaded_final = await api.file.upload_file(
+                path=remote_dir, filename=filename, source=data, create_parents=True
+            )
+            if not uploaded_final:
+                raise BackupNasSyncError("upload final refuse par le NAS")
+        except BackupNasSyncError as err:
+            await self._safe_delete(remote_dir, temp_name)
+            self._state.pending_retries[filename] = retries + 1
+            return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
+
+        await self._safe_delete(remote_dir, temp_name)
+        self._state.pending_retries.pop(filename, None)
+        self._state.last_synced_filename = filename
+        self._state.last_synced_mtime = mtime
+
+        await self._apply_retention(api, remote_dir)
+
+        return {
+            "status": STATUS_OK,
+            "backup_name": filename,
+            "checksum_source": checksum_source,
+            "checksum_nas": checksum_nas,
         }
 
     async def _maybe_notify(
@@ -219,51 +319,8 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     # ------------------------------------------------------------------ #
-    # Executor-side (blocking) logic
+    # Local filesystem (executor-side, blocking)
     # ------------------------------------------------------------------ #
-
-    def _sync_cycle(self) -> dict[str, Any]:
-        candidate = self._find_next_candidate()
-        if candidate is None:
-            return {"status": self._state.last_status or STATUS_IDLE, "backup_name": None}
-
-        filename, path, mtime = candidate
-        retries = self._state.pending_retries.get(filename, 0)
-        if retries >= MAX_RETRIES_PER_FILE:
-            return {
-                "status": STATUS_ERROR,
-                "backup_name": filename,
-                "error": f"abandon apres {MAX_RETRIES_PER_FILE} tentatives",
-            }
-
-        try:
-            checksum_source = self._sha256_file(path)
-            checksum_nas = self._transfer_and_verify(path, filename, checksum_source)
-        except BackupNasSyncError as err:
-            self._state.pending_retries[filename] = retries + 1
-            return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
-
-        if checksum_source != checksum_nas:
-            self._state.pending_retries[filename] = retries + 1
-            return {
-                "status": STATUS_ERROR,
-                "backup_name": filename,
-                "error": "checksum NAS different du checksum local",
-                "checksum_source": checksum_source,
-                "checksum_nas": checksum_nas,
-            }
-
-        self._state.pending_retries.pop(filename, None)
-        self._state.last_synced_filename = filename
-        self._state.last_synced_mtime = mtime
-        self._apply_retention()
-
-        return {
-            "status": STATUS_OK,
-            "backup_name": filename,
-            "checksum_source": checksum_source,
-            "checksum_nas": checksum_nas,
-        }
 
     def _find_next_candidate(self) -> tuple[str, Path, float] | None:
         """Return the oldest unsynced, stabilised backup file - or None."""
@@ -278,7 +335,7 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not entry.is_file() or entry.suffix != BACKUP_SUFFIX:
                 continue
             mtime = entry.stat().st_mtime
-            if mtime == self._state.last_synced_mtime and entry.name == self._state.last_synced_filename:
+            if entry.name == self._state.last_synced_filename and mtime == self._state.last_synced_mtime:
                 continue
             if self._state.last_synced_mtime and mtime <= self._state.last_synced_mtime:
                 continue
@@ -293,138 +350,63 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return filename, path, mtime
 
     @staticmethod
-    def _sha256_file(path: Path) -> str:
+    def _read_and_hash(path: Path) -> tuple[str, bytes]:
+        data = path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        return digest, data
+
+    # ------------------------------------------------------------------ #
+    # NAS FileStation (async)
+    # ------------------------------------------------------------------ #
+
+    async def _download_and_hash(self, api, remote_dir: str, filename: str) -> str:
+        from aiohttp import StreamReader
+
+        stream = await api.file.download_file(remote_dir, filename)
+        if not isinstance(stream, StreamReader):
+            raise BackupNasSyncError("telechargement de controle impossible depuis le NAS")
+
         digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
+        async for chunk in stream.iter_chunked(1024 * 1024):
+            digest.update(chunk)
         return digest.hexdigest()
 
-    def _transfer_and_verify(self, local_path: Path, filename: str, checksum_source: str) -> str:
-        import paramiko  # imported lazily: only needed in the executor thread
-
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    async def _safe_delete(self, remote_dir: str, filename: str) -> None:
         try:
-            client.connect(
-                hostname=self._config[CONF_HOST],
-                port=self._config.get(CONF_PORT, DEFAULT_PORT),
-                username=self._config[CONF_USERNAME],
-                password=self._auth_password(),
-                key_filename=self._auth_key_file(),
-                timeout=30,
-            )
-        except Exception as err:  # noqa: BLE001
-            raise BackupNasSyncError(f"connexion SSH impossible : {err}") from err
-
-        try:
-            remote_dir = self.remote_dir
-            self._ensure_remote_dir(client, remote_dir)
-            remote_tmp = f"{remote_dir}/.{filename}.uploading"
-            remote_final = f"{remote_dir}/{filename}"
-
-            try:
-                sftp = client.open_sftp()
-                try:
-                    sftp.put(str(local_path), remote_tmp)
-                finally:
-                    sftp.close()
-            except Exception as err:  # noqa: BLE001
-                self._safe_remove(client, remote_tmp)
-                raise BackupNasSyncError(f"transfert SFTP en echec : {err}") from err
-
-            checksum_nas = self._remote_sha256(client, remote_tmp)
-
-            if checksum_nas == checksum_source:
-                self._run(client, f"mv {shlex.quote(remote_tmp)} {shlex.quote(remote_final)}")
-            else:
-                # Copie corrompue : supprimer uniquement le fichier temporaire,
-                # jamais une copie NAS precedente valide (remote_final intact).
-                self._safe_remove(client, remote_tmp)
-
-            return checksum_nas
-        finally:
-            client.close()
-
-    def _ensure_remote_dir(self, client, remote_dir: str) -> None:
-        self._run(client, f"mkdir -p {shlex.quote(remote_dir)}")
-
-    def _remote_sha256(self, client, remote_path: str) -> str:
-        stdout, stderr, code = self._run(client, f"sha256sum {shlex.quote(remote_path)}")
-        if code != 0:
-            raise BackupNasSyncError(
-                f"controle checksum NAS en echec (code {code}) : {stderr.strip()}"
-            )
-        try:
-            return stdout.split()[0]
-        except IndexError as err:
-            raise BackupNasSyncError("reponse sha256sum NAS inattendue") from err
-
-    def _safe_remove(self, client, remote_path: str) -> None:
-        try:
-            self._run(client, f"rm -f {shlex.quote(remote_path)}")
+            api = self._get_dsm_client()
+            await api.file.delete_file(remote_dir, filename)
         except Exception:  # noqa: BLE001
-            _LOGGER.warning("backup_nas_sync: nettoyage du fichier temporaire NAS impossible")
+            _LOGGER.warning(
+                "backup_nas_sync: nettoyage du fichier temporaire NAS impossible (%s)", filename
+            )
 
-    @staticmethod
-    def _run(client, command: str) -> tuple[str, str, int]:
-        stdin, stdout, stderr = client.exec_command(command, timeout=60)
-        exit_code = stdout.channel.recv_exit_status()
-        return stdout.read().decode("utf-8", "replace"), stderr.read().decode("utf-8", "replace"), exit_code
-
-    def _apply_retention(self) -> None:
-        import paramiko  # noqa: F401 - reuse connection pattern below
-
+    async def _apply_retention(self, api, remote_dir: str) -> None:
         try:
-            self._apply_retention_ssh()
+            files = await api.file.get_files(remote_dir)
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
                 "backup_nas_sync: application de la retention NAS impossible (non bloquant)"
             )
+            return
 
-    def _apply_retention_ssh(self) -> None:
-        import paramiko
+        if not files:
+            return
 
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            hostname=self._config[CONF_HOST],
-            port=self._config.get(CONF_PORT, DEFAULT_PORT),
-            username=self._config[CONF_USERNAME],
-            password=self._auth_password(),
-            key_filename=self._auth_key_file(),
-            timeout=30,
+        backups = [
+            entry
+            for entry in files
+            if not entry.is_dir and entry.name.endswith(BACKUP_SUFFIX) and not entry.name.endswith(UPLOAD_SUFFIX)
+        ]
+        backups.sort(
+            key=lambda entry: entry.additional.time.mtime if entry.additional else 0,
+            reverse=True,
         )
-        try:
-            sftp = client.open_sftp()
-            try:
-                entries = [
-                    (attr.filename, attr.st_mtime)
-                    for attr in sftp.listdir_attr(self.remote_dir)
-                    if attr.filename.endswith(BACKUP_SUFFIX)
-                ]
-            finally:
-                sftp.close()
-
-            entries.sort(key=lambda item: item[1], reverse=True)
-            for filename, _mtime in entries[self.retention_count :]:
-                # Ne jamais purger la copie la plus recente connue comme valide,
-                # meme si retention_count vaut 0 par erreur de configuration.
-                if filename == self._state.last_synced_filename:
-                    continue
-                self._safe_remove(client, f"{self.remote_dir}/{filename}")
-        finally:
-            client.close()
-
-    def _auth_password(self) -> str | None:
-        if self._config.get(CONF_AUTH_METHOD) == AUTH_KEY_FILE:
-            return None
-        return self._config.get(CONF_PASSWORD)
-
-    def _auth_key_file(self) -> str | None:
-        if self._config.get(CONF_AUTH_METHOD) != AUTH_KEY_FILE:
-            return None
-        return self._config.get(CONF_KEY_FILE)
+        for entry in backups[self.retention_count :]:
+            # Ne jamais purger la copie la plus recente connue comme valide,
+            # meme si retention_count vaut 0 par erreur de configuration.
+            if entry.name == self._state.last_synced_filename:
+                continue
+            await self._safe_delete(remote_dir, entry.name)
 
     async def async_force_sync(self) -> None:
         """Service backup_nas_sync.sync_now."""

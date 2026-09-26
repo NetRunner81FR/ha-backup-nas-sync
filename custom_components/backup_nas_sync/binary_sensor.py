@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ENVIRONMENT, DOMAIN, STATUS_ERROR
+from .const import CONF_SITE_NAME, DOMAIN, STATUS_ERROR
 from .coordinator import BackupNasSyncCoordinator
 
 
@@ -28,9 +28,9 @@ class BackupNasSyncProblemBinarySensor(
 
     def __init__(self, coordinator: BackupNasSyncCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        environment = entry.data[CONF_ENVIRONMENT]
+        site_name = entry.data[CONF_SITE_NAME]
         self._attr_unique_id = f"{entry.entry_id}_probleme"
-        self._attr_name = f"Backup NAS Sync {environment} - Probleme"
+        self._attr_name = f"Backup NAS Sync {site_name} - Probleme"
 
     @property
     def is_on(self) -> bool:

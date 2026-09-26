@@ -1,35 +1,47 @@
 # Backup NAS Sync
 
 Integration Home Assistant qui fiabilise la copie des sauvegardes locales
-vers un NAS et controle leur integrite par checksum.
+vers un NAS Synology distant (accessible en HTTPS) et controle leur
+integrite par checksum.
 
 ## Pourquoi
 
-L'integration native HA Backup ciblant un NAS (agent "NAS Synology")
-peut produire des copies corrompues sans avertissement visible avant
-qu'une restauration reelle echoue. Ce composant contourne ce chemin :
-il ne cree pas de backup, il ne fait que copier de maniere fiable un
-backup deja cree en local (sain) vers le NAS, avec verification.
+L'agent de sauvegarde natif Synology de HA Backup peut produire des
+copies corrompues sans avertissement visible avant qu'une restauration
+reelle echoue. Ce composant contourne ce chemin : il ne cree pas de
+backup, il ne fait que copier de maniere fiable un backup deja cree en
+local (sain) vers le NAS, avec verification par round-trip.
 
 ## Fonctionnement
 
 1. Surveille le repertoire local des sauvegardes HA (`<config>/backups`
    par defaut).
 2. Des qu'un nouveau backup est detecte et stabilise, calcule son
-   empreinte SHA-256.
-3. Transfere le fichier vers le NAS par SSH/SFTP.
-4. Calcule l'empreinte SHA-256 du fichier cote NAS (commande distante).
-5. Compare les deux empreintes :
-   - identiques -> synchronisation validee, retention appliquee ;
-   - differentes ou erreur -> la copie precedente valide n'est jamais
-     ecrasee, notification envoyee via `notifications_manager.notify`.
+   empreinte SHA-256 et le lit en memoire.
+3. Transfere le fichier vers le NAS (API FileStation, HTTPS) sous un nom
+   temporaire.
+4. Retelecharge cette copie temporaire et recalcule son empreinte
+   SHA-256 (verification reelle de bout en bout, pas seulement une
+   confirmation d'ecriture).
+5. Si les empreintes correspondent : upload sous le nom final, retention
+   appliquee, fichier temporaire supprime. Sinon : fichier temporaire
+   supprime, aucune copie valide existante n'est touchee, notification
+   envoyee via `notifications_manager.notify`.
+
+## Pas de nouveaux identifiants
+
+Ce composant ne demande jamais d'hote/utilisateur/mot de passe NAS : il
+reutilise la connexion DSM deja authentifiee d'une integration
+**Synology DSM** (`synology_dsm`) deja configuree sur cette instance
+Home Assistant. Installation identique et simple sur plusieurs
+instances HA distinctes partageant le meme NAS distant.
 
 ## Entites
 
-- `sensor.backup_nas_sync_<env>_dernier_controle` : horodatage et
+- `sensor.backup_nas_sync_<site>_dernier_controle` : horodatage et
   attributs du dernier controle (resultat, backup, checksums, echecs
   consecutifs).
-- `binary_sensor.backup_nas_sync_<env>_probleme` : `on` si le dernier
+- `binary_sensor.backup_nas_sync_<site>_probleme` : `on` si le dernier
   cycle a echoue.
 
 ## Service
@@ -38,10 +50,9 @@ backup deja cree en local (sain) vers le NAS, avec verification.
 
 ## Configuration
 
-Via l'interface Home Assistant (config_flow) : hote NAS, port,
-utilisateur SSH, authentification (mot de passe ou cle privee),
-environnement (sandbox/dev/recette/prod - determine le sous-repertoire
-NAS cible, isolation stricte entre environnements), repertoires local
-et distant, intervalle de verification, retention.
+Via l'interface Home Assistant (config_flow) : choix de l'integration
+Synology DSM a utiliser, nom du site (namespace le repertoire NAS cible
+- isolation entre plusieurs installations HA partageant le meme NAS),
+repertoires local et distant, intervalle de verification, retention.
 
 Aucun secret n'est versionne dans ce depot.
