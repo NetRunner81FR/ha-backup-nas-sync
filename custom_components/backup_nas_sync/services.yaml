@@ -1,0 +1,5 @@
+sync_now:
+  name: Synchroniser maintenant
+  description: >-
+    Force un cycle complet de detection, transfert et verification
+    immediatement, sans attendre le prochain intervalle de poll.

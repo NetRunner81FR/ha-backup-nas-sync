@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Backup NAS Sync",
+        "description": "Configurer la copie fiable des sauvegardes locales vers le NAS (contourne l'integration native HA Backup NAS, source connue de corruption).",
+        "data": {
+          "environment": "Environnement",
+          "host": "Hote NAS",
+          "port": "Port SSH",
+          "username": "Utilisateur SSH",
+          "auth_method": "Methode d'authentification",
+          "password": "Mot de passe",
+          "key_file": "Chemin de la cle privee",
+          "remote_base_dir": "Repertoire NAS de base",
+          "local_backup_dir": "Repertoire local des backups",
+          "poll_interval": "Intervalle de verification (secondes)",
+          "retention_count": "Nombre de versions conservees",
+          "stable_seconds": "Delai de stabilisation (secondes)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Connexion SSH au NAS impossible - verifier hote, port, utilisateur et authentification."
+    },
+    "abort": {
+      "already_configured": "Cet environnement est deja configure."
+    }
+  }
+}

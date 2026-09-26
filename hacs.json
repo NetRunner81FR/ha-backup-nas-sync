@@ -1,0 +1,6 @@
+{
+  "name": "Backup NAS Sync",
+  "render_readme": true,
+  "domains": ["backup_nas_sync"],
+  "homeassistant": "2024.6.0"
+}

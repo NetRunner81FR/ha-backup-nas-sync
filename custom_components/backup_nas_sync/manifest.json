@@ -1,0 +1,11 @@
+{
+  "domain": "backup_nas_sync",
+  "name": "Backup NAS Sync",
+  "version": "0.1.0",
+  "documentation": "https://git.famille-henrion.fr/NetRunner/homeassistant-factory",
+  "dependencies": [],
+  "codeowners": ["@NetRunner"],
+  "requirements": ["paramiko>=3.4.0"],
+  "iot_class": "local_polling",
+  "config_flow": true
+}
