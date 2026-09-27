@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4-beta.2
+
+- Corrige `manifest.json` "documentation" qui pointait vers le depot
+  Gitea prive (`git.famille-henrion.fr/...`, non accessible) au lieu du
+  depot GitHub public - le bouton d'aide ("?") du depot dans HACS
+  renvoyait vers une page inaccessible pour l'utilisateur. Repere en
+  usage reel par le PO.
+
 ## 0.3.4-beta.1
 
 - Corrige un bug reel constate en RECETTE au redemarrage HA : un cycle de

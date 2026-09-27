@@ -2,7 +2,7 @@
   "domain": "backup_nas_sync",
   "name": "Backup NAS Sync",
   "version": "0.3.4",
-  "documentation": "https://git.famille-henrion.fr/NetRunner/homeassistant-factory",
+  "documentation": "https://github.com/NetRunner81FR/ha-backup-nas-sync",
   "dependencies": ["synology_dsm"],
   "codeowners": ["@NetRunner"],
   "requirements": ["py-synologydsm-api>=2.10.4"],
