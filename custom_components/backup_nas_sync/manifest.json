@@ -1,7 +1,7 @@
 {
   "domain": "backup_nas_sync",
   "name": "Backup NAS Sync",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "documentation": "https://git.famille-henrion.fr/NetRunner/homeassistant-factory",
   "dependencies": ["synology_dsm"],
   "codeowners": ["@NetRunner"],

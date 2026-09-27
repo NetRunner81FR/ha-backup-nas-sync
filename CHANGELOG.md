@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.4-beta.1
+
+- Corrige un bug reel constate en RECETTE au redemarrage HA : un cycle de
+  synchronisation interrompu en cours de transfert (ex. redemarrage HA)
+  laisse un fichier temporaire `.uploading` orphelin sur le NAS. Au cycle
+  suivant, la nouvelle tentative sur le meme fichier echouait avec
+  `SynologyDSMAPIErrorException` (code 414 "File already exists"), une
+  exception de la librairie non capturee par le composant : elle
+  echappait au comptage des tentatives (`pending_retries`) et au
+  nettoyage du fichier temporaire, provoquant un echec identique
+  indefiniment repete a chaque cycle sans jamais s'auto-corriger ni
+  abandonner apres le nombre maximal de tentatives.
+  `SynologyDSMException` (base de la librairie `synology_dsm`) est
+  desormais interceptee au meme titre que `BackupNasSyncError` dans
+  `_sync_one` : le fichier temporaire orphelin est supprime, la
+  tentative est comptabilisee, et la synchronisation se retablit
+  normalement au cycle suivant.
+
 ## 0.3.3-beta.1
 
 - Amelioration des libelles et de l'aide contextuelle du config_flow,

@@ -24,6 +24,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+from synology_dsm.exceptions import SynologyDSMException
 
 from .const import (
     CONF_LOCAL_BACKUP_DIR,
@@ -234,7 +235,14 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise BackupNasSyncError("upload temporaire refuse par le NAS")
 
             checksum_nas = await self._download_and_hash(api, remote_dir, temp_name)
-        except BackupNasSyncError as err:
+        except (BackupNasSyncError, SynologyDSMException) as err:
+            # SynologyDSMException couvre les echecs remontes tels quels par
+            # la librairie (ex. upload refuse avec code 414 "File already
+            # exists" quand un fichier .uploading orphelin subsiste suite a
+            # un redemarrage HA survenu au milieu d'un cycle precedent) :
+            # sans cette capture, l'erreur echappe au comptage des tentatives
+            # et au nettoyage ci-dessous, et le meme echec se reproduit a
+            # l'identique indefiniment a chaque cycle.
             await self._safe_delete(remote_dir, temp_name)
             self._state.pending_retries[filename] = retries + 1
             return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
@@ -260,7 +268,7 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if not uploaded_final:
                 raise BackupNasSyncError("upload final refuse par le NAS")
-        except BackupNasSyncError as err:
+        except (BackupNasSyncError, SynologyDSMException) as err:
             await self._safe_delete(remote_dir, temp_name)
             self._state.pending_retries[filename] = retries + 1
             return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
