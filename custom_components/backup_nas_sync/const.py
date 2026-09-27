@@ -18,9 +18,9 @@ CONF_STABLE_SECONDS = "stable_seconds"
 # Sur d'autres installations (HAOS/Supervisor), /backup peut etre le bon
 # chemin - configurable a l'installation.
 DEFAULT_LOCAL_BACKUP_DIR = "/config/backups"
-# Chemin FileStation (pas un chemin filesystem /volumeN/...) - le nom de
-# dossier partage est a adapter a l'installation Synology reelle.
-DEFAULT_REMOTE_BASE_DIR = "/docker/backups/ha-nas-sync"
+# Chemin FileStation cible - champ requis, pas de valeur par defaut :
+# chaque installation choisit son propre repertoire, coherent avec la
+# convention deja en place sur le NAS (ex. /BackUpHA/ha_backup_<site>).
 DEFAULT_POLL_INTERVAL = 300
 DEFAULT_RETENTION_COUNT = 5
 DEFAULT_STABLE_SECONDS = 60

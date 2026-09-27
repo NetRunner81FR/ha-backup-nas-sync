@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1-beta.1
+
+- `remote_base_dir` devient le chemin NAS cible complet et definitif
+  (plus de composition automatique avec `site_name`) : s'aligne sur la
+  convention deja en place sur le NAS de production
+  (`/BackUpHA/ha_backup_<site>`), un parametre pour gerer librement le
+  repertoire cible par instance. Champ desormais requis, valide (doit
+  commencer par `/`).
+- Ajout `translations/en.json` et `translations/fr.json` (les messages
+  d'erreur/abandon du config_flow s'affichaient en brut faute de
+  traduction compilee - `strings.json` seul ne suffit pas pour un
+  composant custom hors pipeline HA Core).
+
 ## 0.3.0-beta.1
 
 - Changement d'architecture majeur : reutilise la connexion DSM d'une

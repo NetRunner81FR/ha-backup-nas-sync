@@ -35,7 +35,6 @@ from .const import (
     CONF_SYNOLOGY_ENTRY_ID,
     DEFAULT_LOCAL_BACKUP_DIR,
     DEFAULT_POLL_INTERVAL,
-    DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_RETENTION_COUNT,
     DEFAULT_STABLE_SECONDS,
     DOMAIN,
@@ -119,9 +118,11 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def remote_dir(self) -> str:
-        base = self._config.get(CONF_REMOTE_BASE_DIR, DEFAULT_REMOTE_BASE_DIR)
-        site_name = self._config[CONF_SITE_NAME]
-        return f"{base.rstrip('/')}/{site_name}"
+        # Chemin NAS cible complet et definitif tel que configure par
+        # l'utilisateur (pas de composition automatique avec site_name) :
+        # chaque site choisit son propre repertoire, coherent avec la
+        # convention deja en place sur le NAS (ha_backup_<site>).
+        return self._config[CONF_REMOTE_BASE_DIR].rstrip("/")
 
     @property
     def stable_seconds(self) -> int:

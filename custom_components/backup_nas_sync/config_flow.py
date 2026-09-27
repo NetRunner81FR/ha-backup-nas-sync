@@ -25,7 +25,6 @@ from .const import (
     CONF_SYNOLOGY_ENTRY_ID,
     DEFAULT_LOCAL_BACKUP_DIR,
     DEFAULT_POLL_INTERVAL,
-    DEFAULT_REMOTE_BASE_DIR,
     DEFAULT_RETENTION_COUNT,
     DEFAULT_STABLE_SECONDS,
     DOMAIN,
@@ -41,8 +40,8 @@ def _schema(synology_entries: dict[str, str], defaults: dict[str, Any] | None = 
                 CONF_SYNOLOGY_ENTRY_ID, default=defaults.get(CONF_SYNOLOGY_ENTRY_ID)
             ): vol.In(synology_entries),
             vol.Required(CONF_SITE_NAME, default=defaults.get(CONF_SITE_NAME, "")): str,
-            vol.Optional(
-                CONF_REMOTE_BASE_DIR, default=defaults.get(CONF_REMOTE_BASE_DIR, DEFAULT_REMOTE_BASE_DIR)
+            vol.Required(
+                CONF_REMOTE_BASE_DIR, default=defaults.get(CONF_REMOTE_BASE_DIR, "")
             ): str,
             vol.Optional(
                 CONF_LOCAL_BACKUP_DIR, default=defaults.get(CONF_LOCAL_BACKUP_DIR, DEFAULT_LOCAL_BACKUP_DIR)
@@ -81,10 +80,14 @@ class BackupNasSyncConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             site_name = user_input[CONF_SITE_NAME].strip()
+            remote_dir = user_input[CONF_REMOTE_BASE_DIR].strip()
             if not site_name:
                 errors["base"] = "invalid_site_name"
+            elif not remote_dir.startswith("/"):
+                errors["base"] = "invalid_remote_dir"
             else:
                 user_input[CONF_SITE_NAME] = site_name
+                user_input[CONF_REMOTE_BASE_DIR] = remote_dir
                 await self.async_set_unique_id(site_name)
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
