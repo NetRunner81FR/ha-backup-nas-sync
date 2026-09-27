@@ -1,7 +1,7 @@
 {
   "domain": "backup_nas_sync",
-  "name": "Backup NAS Sync",
-  "version": "0.3.4",
+  "name": "NR Backup NAS Sync",
+  "version": "0.4.0",
   "documentation": "https://github.com/NetRunner81FR/ha-backup-nas-sync",
   "dependencies": ["synology_dsm"],
   "codeowners": ["@NetRunner"],

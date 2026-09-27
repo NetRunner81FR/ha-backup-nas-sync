@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Backup NAS Sync mark</title>
+  <defs>
+    <linearGradient id="bns-blue" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00E5FF"/>
+      <stop offset="0.46" stop-color="#0D6EFD"/>
+      <stop offset="1" stop-color="#7B61FF"/>
+    </linearGradient>
+    <radialGradient id="bns-clarion" cx="50%" cy="50%" r="50%">
+      <stop stop-color="#FFD166"/>
+      <stop offset="0.58" stop-color="#FFB000"/>
+      <stop offset="1" stop-color="#FF7A00"/>
+    </radialGradient>
+    <filter id="bns-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="#0A0F1C"/>
+
+  <!-- NAS drive -->
+  <rect x="14" y="22" width="36" height="24" rx="4" fill="#07101f" stroke="url(#bns-blue)" stroke-width="3" filter="url(#bns-glow)"/>
+  <circle cx="21" cy="30" r="1.8" fill="#00E5FF"/>
+  <line x1="26" y1="30" x2="44" y2="30" stroke="#28364f" stroke-width="2" stroke-linecap="round"/>
+  <line x1="26" y1="38" x2="38" y2="38" stroke="#28364f" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Sync arrows -->
+  <path d="M22 16a12 12 0 0 1 18-3" fill="none" stroke="url(#bns-blue)" stroke-width="3.4" stroke-linecap="round" filter="url(#bns-glow)"/>
+  <path d="M37 10l4 2.6-4.6 2.2z" fill="#00E5FF"/>
+  <path d="M42 52a12 12 0 0 1-18 3" fill="none" stroke="url(#bns-blue)" stroke-width="3.4" stroke-linecap="round" filter="url(#bns-glow)"/>
+  <path d="M27 58l-4-2.6 4.6-2.2z" fill="#7B61FF"/>
+
+  <!-- Clarion: verified checksum accent -->
+  <circle cx="47" cy="47" r="7.5" fill="#07101f" stroke="#0D6EFD" stroke-width="1.6"/>
+  <circle cx="47" cy="47" r="5" fill="url(#bns-clarion)" filter="url(#bns-glow)"/>
+  <path d="M44 47l2 2 4-4.4" fill="none" stroke="#07101f" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

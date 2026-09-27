@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0-beta.1
+
+- Nouveau : icone du composant (`icon.png`), dessinee sur le modele de
+  l'identite visuelle NetRunner Nexus (degrade bleu-cyan-violet avec
+  glow, fond bleu nuit, accent ambre "verification checksum") -
+  visible dans HACS et l'ecran d'ajout d'integration.
+- Renommage : "Backup NAS Sync" -> "NR Backup NAS Sync" (branding
+  NetRunner) dans `manifest.json`, `hacs.json` et le titre des entrees
+  de configuration. Aucun impact sur le `domain` (`backup_nas_sync`)
+  ni sur les entites/unique_id existants.
+- Nouveau : possibilite de modifier les parametres (repertoire NAS,
+  repertoire local, intervalle, retention, delai de stabilisation,
+  choix de l'integration Synology DSM) apres la creation de
+  l'integration, via Configurer - reconfigure flow natif HA, rechargement
+  automatique sans redemarrage. Le nom du site reste non modifiable
+  (double comme identifiant unique de l'entree).
+- README enrichi (schema du flux, tableau des parametres, section
+  modification des parametres).
+- Prerequis releve : `homeassistant >= 2024.11.0` (requis par le
+  reconfigure flow natif).
+
 ## 0.3.4-beta.4
 
 - Corrige un bug bloquant reel constate en RECETTE : `_find_next_candidate`

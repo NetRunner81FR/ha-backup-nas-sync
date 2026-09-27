@@ -1,4 +1,4 @@
-# Backup NAS Sync
+# NR Backup NAS Sync
 
 Integration Home Assistant qui fiabilise la copie des sauvegardes locales
 vers un NAS Synology distant (accessible en HTTPS) et controle leur
@@ -16,17 +16,26 @@ local (sain) vers le NAS, avec verification par round-trip.
 
 1. Surveille le repertoire local des sauvegardes HA (`<config>/backups`
    par defaut).
-2. Des qu'un nouveau backup est detecte et stabilise, calcule son
-   empreinte SHA-256 et le lit en memoire.
+2. Des qu'un nouveau backup est detecte et stabilise (aucune modification
+   depuis `stable_seconds`), calcule son empreinte SHA-256 et le lit en
+   memoire.
 3. Transfere le fichier vers le NAS (API FileStation, HTTPS) sous un nom
-   temporaire.
+   temporaire (`<nom>.uploading`).
 4. Retelecharge cette copie temporaire et recalcule son empreinte
    SHA-256 (verification reelle de bout en bout, pas seulement une
-   confirmation d'ecriture).
-5. Si les empreintes correspondent : upload sous le nom final, retention
-   appliquee, fichier temporaire supprime. Sinon : fichier temporaire
-   supprime, aucune copie valide existante n'est touchee, notification
-   envoyee via `notifications_manager.notify`.
+   confirmation d'ecriture - il n'existe pas d'API de checksum distant
+   native sur FileStation).
+5. Si les empreintes correspondent : upload sous le nom final (pas de
+   rename cote FileStation - un second envoi des memes octets), retention
+   appliquee (les copies les plus anciennes au-dela de `retention_count`
+   sont supprimees, jamais la derniere copie valide), fichier temporaire
+   supprime. Si elles different, ou si une etape echoue : fichier
+   temporaire supprime, aucune copie valide existante n'est touchee,
+   nouvelle tentative au cycle suivant (3 tentatives maximum par fichier,
+   puis abandon pour laisser la file progresser sur les fichiers plus
+   recents), notification envoyee via `notifications_manager.notify`
+   uniquement sur transition (echec initial, ou retour a la normale -
+   jamais a chaque succes repete).
 
 ## Pas de nouveaux identifiants
 
@@ -40,19 +49,41 @@ instances HA distinctes partageant le meme NAS distant.
 
 - `sensor.backup_nas_sync_<site>_dernier_controle` : horodatage et
   attributs du dernier controle (resultat, backup, checksums, echecs
-  consecutifs).
+  consecutifs, erreur).
 - `binary_sensor.backup_nas_sync_<site>_probleme` : `on` si le dernier
   cycle a echoue.
 
 ## Service
 
-- `backup_nas_sync.sync_now` : force un cycle immediat.
+- `backup_nas_sync.sync_now` : force un cycle immediat (sans attendre
+  `poll_interval`).
 
-## Configuration
+## Configuration initiale
 
-Via l'interface Home Assistant (config_flow) : choix de l'integration
-Synology DSM a utiliser, nom du site (namespace le repertoire NAS cible
-- isolation entre plusieurs installations HA partageant le meme NAS),
-repertoires local et distant, intervalle de verification, retention.
+Via l'interface Home Assistant (Parametres > Appareils et services >
+Ajouter une integration > NR Backup NAS Sync) :
 
-Aucun secret n'est versionne dans ce depot.
+| Parametre | Role |
+| --- | --- |
+| Integration Synology DSM a utiliser | Quelle connexion `synology_dsm` deja configuree reutiliser. |
+| Nom du site | Identifie ce lieu/cette instance dans le nom des entites - n'affecte pas le chemin NAS. **Non modifiable apres creation** (voir ci-dessous). |
+| Repertoire NAS cible | Chemin FileStation complet et definitif (ex. `/BackUpHA/ha_backup_recette`) - jamais de prefixe `/volumeN/`, le dossier partage Synology est adresse directement par son nom. |
+| Repertoire local des backups | Ou HA stocke ses sauvegardes locales (`/config/backups` par defaut, installation Docker standard sans Supervisor). |
+| Intervalle de verification | Frequence de detection d'un nouveau backup pret a synchroniser. |
+| Nombre de versions conservees | Retention sur le NAS - la derniere copie valide n'est jamais purgee. |
+| Delai de stabilisation | Duree sans modification du fichier local avant de le considerer complet. |
+
+## Modifier les parametres
+
+Depuis Parametres > Appareils et services > NR Backup NAS Sync > menu
+"..." de l'entree > **Configurer** : tous les parametres ci-dessus sauf
+le nom du site sont modifiables sans supprimer/recreer l'integration -
+la synchronisation reprend avec les nouvelles valeurs immediatement
+(rechargement automatique de l'entree, pas de redemarrage HA requis).
+Renommer un site reste une operation de suppression/recreation
+(rare en pratique, le nom du site ne sert qu'a l'affichage).
+
+## Aucun secret versionne
+
+Aucun identifiant NAS n'est gere ni stocke par ce composant - il ne fait
+que reutiliser une session `synology_dsm` deja authentifiee par ailleurs.
