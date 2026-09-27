@@ -7,7 +7,7 @@
         "data": {
           "synology_entry_id": "Integration Synology DSM a utiliser",
           "site_name": "Nom du site (identifie ce lieu/cette instance sur le NAS)",
-          "remote_base_dir": "Repertoire NAS cible complet (chemin FileStation, ex. /BackUpHA/ha_backup_<site>)",
+          "remote_base_dir": "Repertoire NAS cible complet (chemin FileStation, ex. /BackUpHA/ha_backup_NOM_DU_SITE)",
           "local_backup_dir": "Repertoire local des backups",
           "poll_interval": "Intervalle de verification (secondes)",
           "retention_count": "Nombre de versions conservees",

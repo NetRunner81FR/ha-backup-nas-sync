@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2-beta.1
+
+- Corrige une erreur de rendu du config_flow : le libelle du champ
+  `remote_base_dir` contenait `<site>` (exemple de chemin), interprete
+  par le moteur de traduction du frontend HA comme une balise HTML non
+  fermee ("Translation error: UNCLOSED_TAG"), bloquant l'affichage du
+  champ. Detecte par test SANDBOX reel. Remplace par
+  `NOM_DU_SITE` (pas de chevrons).
+
 ## 0.3.1-beta.1
 
 - `remote_base_dir` devient le chemin NAS cible complet et definitif
