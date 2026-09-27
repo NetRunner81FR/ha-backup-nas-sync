@@ -8,6 +8,7 @@ partagent le meme NAS distant.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -85,6 +86,11 @@ class BackupNasSyncConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_site_name"
             elif not remote_dir.startswith("/"):
                 errors["base"] = "invalid_remote_dir"
+            elif re.match(r"^/volume\d+(/|$)", remote_dir):
+                # Erreur constatee en usage reel : un chemin systeme de
+                # fichiers (/volumeN/...) n'est pas un chemin FileStation
+                # valide - le dossier partage est adresse par son nom.
+                errors["base"] = "remote_dir_has_volume_prefix"
             else:
                 user_input[CONF_SITE_NAME] = site_name
                 user_input[CONF_REMOTE_BASE_DIR] = remote_dir

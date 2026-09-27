@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3-beta.1
+
+- Amelioration des libelles et de l'aide contextuelle du config_flow,
+  suite a une confusion reelle en usage (RECETTE) : ajout de
+  `data_description` par champ, avec un exemple explicite correct vs
+  incorrect pour `remote_base_dir`.
+- Nouvelle validation proactive : rejette un chemin commencant par
+  `/volumeN/` avec un message explicite (FileStation adresse le
+  dossier partage directement par son nom, pas par le chemin systeme
+  de fichiers) - erreur reellement rencontree par le PO en configurant
+  RECETTE.
+
 ## 0.3.2-beta.1
 
 - Corrige une erreur de rendu du config_flow : le libelle du champ

@@ -6,18 +6,27 @@
         "description": "Copie fiable des sauvegardes locales vers le NAS, en reutilisant la connexion d'une integration Synology DSM deja configuree (contourne l'agent de sauvegarde natif Synology, source connue de corruption).",
         "data": {
           "synology_entry_id": "Integration Synology DSM a utiliser",
-          "site_name": "Nom du site (identifie ce lieu/cette instance sur le NAS)",
-          "remote_base_dir": "Repertoire NAS cible complet (chemin FileStation, ex. /BackUpHA/ha_backup_NOM_DU_SITE)",
+          "site_name": "Nom du site",
+          "remote_base_dir": "Repertoire NAS cible",
           "local_backup_dir": "Repertoire local des backups",
           "poll_interval": "Intervalle de verification (secondes)",
           "retention_count": "Nombre de versions conservees",
           "stable_seconds": "Delai de stabilisation (secondes)"
+        },
+        "data_description": {
+          "site_name": "Identifie ce lieu/cette instance sur le NAS. Sert uniquement au nom des entites - n'affecte pas le chemin NAS.",
+          "remote_base_dir": "Chemin FileStation COMPLET - PAS un chemin systeme de fichiers. Ne jamais inclure /volumeN/, le dossier partage Synology est adresse directement par son nom. Correct : /BackUpHA/ha_backup_recette. Incorrect : /volume1/BackUpHA/ha_backup_recette.",
+          "local_backup_dir": "Chemin dans le conteneur Home Assistant ou les sauvegardes locales sont stockees. /config/backups par defaut (installation Docker standard sans Supervisor).",
+          "poll_interval": "A quelle frequence verifier si un nouveau backup local est pret a etre synchronise.",
+          "retention_count": "Nombre de sauvegardes conservees sur le NAS - les plus anciennes sont supprimees au-dela, jamais la derniere copie valide.",
+          "stable_seconds": "Duree sans modification du fichier local avant de le considerer complet et pret a etre transfere."
         }
       }
     },
     "error": {
       "invalid_site_name": "Le nom du site ne peut pas etre vide.",
-      "invalid_remote_dir": "Le repertoire NAS cible doit commencer par / (chemin FileStation absolu)."
+      "invalid_remote_dir": "Le repertoire NAS cible doit commencer par / (chemin FileStation absolu, ex. /BackUpHA/ha_backup_recette).",
+      "remote_dir_has_volume_prefix": "Ne pas inclure /volumeN/ dans le chemin - FileStation adresse le dossier partage directement par son nom (ex. /BackUpHA/... et non /volume1/BackUpHA/...)."
     },
     "abort": {
       "already_configured": "Ce site est deja configure.",
