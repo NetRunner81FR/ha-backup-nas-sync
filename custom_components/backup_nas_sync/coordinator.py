@@ -213,6 +213,15 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _sync_one(self, filename: str, path: Path, mtime: float) -> dict[str, Any]:
         retries = self._state.pending_retries.get(filename, 0)
         if retries >= MAX_RETRIES_PER_FILE:
+            _LOGGER.warning(
+                "backup_nas_sync: %s abandonne definitivement apres %s tentatives "
+                "(last_synced_filename=%s, last_synced_mtime=%s) - un nouveau backup local "
+                "ou une remise a zero manuelle de l'etat sont necessaires pour reessayer",
+                filename,
+                MAX_RETRIES_PER_FILE,
+                self._state.last_synced_filename,
+                self._state.last_synced_mtime,
+            )
             return {
                 "status": STATUS_ERROR,
                 "backup_name": filename,
@@ -243,6 +252,13 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # sans cette capture, l'erreur echappe au comptage des tentatives
             # et au nettoyage ci-dessous, et le meme echec se reproduit a
             # l'identique indefiniment a chaque cycle.
+            _LOGGER.warning(
+                "backup_nas_sync: echec upload/verification temporaire pour %s (tentative %s/%s) - %s",
+                filename,
+                retries + 1,
+                MAX_RETRIES_PER_FILE,
+                err,
+            )
             await self._safe_delete(remote_dir, temp_name)
             self._state.pending_retries[filename] = retries + 1
             return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
@@ -269,6 +285,13 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not uploaded_final:
                 raise BackupNasSyncError("upload final refuse par le NAS")
         except (BackupNasSyncError, SynologyDSMException) as err:
+            _LOGGER.warning(
+                "backup_nas_sync: echec upload final pour %s (tentative %s/%s) - %s",
+                filename,
+                retries + 1,
+                MAX_RETRIES_PER_FILE,
+                err,
+            )
             await self._safe_delete(remote_dir, temp_name)
             self._state.pending_retries[filename] = retries + 1
             return {"status": STATUS_ERROR, "backup_name": filename, "error": str(err)}
@@ -383,10 +406,24 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _safe_delete(self, remote_dir: str, filename: str) -> None:
         try:
             api = self._get_dsm_client()
-            await api.file.delete_file(remote_dir, filename)
+            deleted = await api.file.delete_file(remote_dir, filename)
         except Exception:  # noqa: BLE001
             _LOGGER.warning(
-                "backup_nas_sync: nettoyage du fichier temporaire NAS impossible (%s)", filename
+                "backup_nas_sync: nettoyage du fichier temporaire NAS impossible (exception) - %s",
+                filename,
+            )
+            return
+        if not deleted:
+            # L'API Synology peut repondre sans lever d'exception tout en
+            # signalant un echec (success=False/None) - sans ce controle,
+            # un fichier .uploading orphelin non supprime declenchait un
+            # "File already exists" identique a chaque nouvelle tentative,
+            # jusqu'a l'abandon definitif, sans aucune trace exploitable
+            # dans les logs.
+            _LOGGER.warning(
+                "backup_nas_sync: suppression refusee par le NAS (reponse: %s) - %s",
+                deleted,
+                filename,
             )
 
     async def _apply_retention(self, api, remote_dir: str) -> None:

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.4-beta.3
+
+- Ajoute la journalisation manquante sur les cycles de synchronisation
+  en echec (`_sync_one`) : chaque tentative echouee (upload temporaire,
+  verification, upload final, abandon apres 3 tentatives) est desormais
+  loguee avec le detail de l'erreur - jusqu'ici invisible, un echec
+  gere proprement (capture SynologyDSMException, v0.3.4-beta.1) ne
+  laissait plus aucune trace exploitable dans les logs.
+- Corrige `_safe_delete` : le retour de l'API `delete_file` du NAS
+  (qui peut signaler un echec `success=False` sans lever d'exception)
+  n'etait jamais verifie - un nettoyage de fichier temporaire
+  silencieusement refuse par le NAS n'etait ni detecte ni logue,
+  laissant le meme fichier `.uploading` orphelin bloquer indefiniment
+  les tentatives suivantes jusqu'a l'abandon definitif, sans aucun
+  indice sur la cause reelle. Repere en RECETTE en testant le
+  correctif v0.3.4-beta.1/.2 sur le fichier orphelin reel.
+
 ## 0.3.4-beta.2
 
 - Corrige `manifest.json` "documentation" qui pointait vers le depot
