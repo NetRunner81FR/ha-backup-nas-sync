@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.4-beta.4
+
+- Corrige un bug bloquant reel constate en RECETTE : `_find_next_candidate`
+  selectionne toujours le fichier local non-synchronise **le plus
+  ancien**, sans jamais tenir compte d'un abandon definitif
+  (`pending_retries` epuise). Consequence : un unique fichier
+  definitivement abandonne (voir v0.3.4-beta.1/.2/.3) bloquait *pour
+  toujours* la synchronisation de tout backup plus recent, y compris
+  une sauvegarde manuelle fraichement creee pour tester le correctif -
+  elle n'etait jamais prise en compte tant que l'ancien fichier
+  abandonne restait le plus ancien fichier local non marque
+  synchronise. Un fichier ayant atteint `MAX_RETRIES_PER_FILE` est
+  desormais exclu de la selection de candidat, permettant a la
+  synchronisation de progresser sur les backups suivants au lieu de
+  rester bloquee indefiniment sur un seul echec definitif.
+
 ## 0.3.4-beta.3
 
 - Ajoute la journalisation manquante sur les cycles de synchronisation

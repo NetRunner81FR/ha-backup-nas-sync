@@ -373,6 +373,17 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             if (now - mtime) < self.stable_seconds:
                 continue  # not stabilised yet, revisit next cycle
+            if self._state.pending_retries.get(entry.name, 0) >= MAX_RETRIES_PER_FILE:
+                # Un fichier definitivement abandonne (compteur epuise) ne
+                # doit plus jamais etre selectionne : comme cette fonction
+                # ne retourne que le CANDIDAT LE PLUS ANCIEN non exclu, un
+                # seul fichier bloque indefiniment - meme abandonne - aurait
+                # sinon empeche pour toujours la synchronisation de tout
+                # backup plus recent (constate en RECETTE : une nouvelle
+                # sauvegarde manuelle n'etait jamais prise en compte tant
+                # que l'ancien fichier abandonne restait le plus ancien
+                # fichier local non marque synchronise).
+                continue
             candidates.append((mtime, entry.name, entry))
 
         if not candidates:
