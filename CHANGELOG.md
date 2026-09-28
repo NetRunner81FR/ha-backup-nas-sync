@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.1-beta.1
+
+- Diagnostic : quand le repertoire local de backups est introuvable
+  (`Path.is_dir()` avale silencieusement toute erreur - inexistant,
+  permission refusee, mauvais type), journalise desormais le contenu
+  reel du dossier parent vu par ce process Home Assistant Core
+  (ou explique pourquoi ce n'est pas possible). Utile sur HAOS/
+  Supervisor ou un acces SSH direct/un autre addon peut voir un montage
+  different de celui du conteneur Core. Suite a un incident PROD reel
+  (2026-09-28) ou `/backup` restait introuvable pour le composant
+  malgre des permissions ouvertes verifiees par SSH.
+
+## 0.4.0
+
+Premiere release stable (promue depuis v0.4.0-beta.1, meme contenu,
+validee SANDBOX et DEV - voir issues #161 et #175). Couvre l'ensemble
+du travail depuis la version initiale : pivot vers la reutilisation de
+la connexion `synology_dsm`, verification round-trip SHA-256, 3 bugs
+de fiabilite reels trouves et corriges en RECETTE (crash sur fichier
+orphelin, nettoyage NAS non verifie, file de synchronisation bloquee),
+icone, branding NR, documentation enrichie, reconfigure flow.
+
 ## 0.4.0-beta.1
 
 - Nouveau : icone du composant (`icon.png`), dessinee sur le modele de

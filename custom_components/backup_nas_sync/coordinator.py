@@ -357,6 +357,14 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _find_next_candidate(self) -> tuple[str, Path, float] | None:
         """Return the oldest unsynced, stabilised backup file - or None."""
         if not self.local_backup_dir.is_dir():
+            # Path.is_dir() avale silencieusement toute erreur (inexistant,
+            # permission refusee, mauvais type) et retourne False dans tous
+            # les cas - insuffisant pour diagnostiquer a distance (ex. HAOS/
+            # Supervisor ou le conteneur Core peut ne pas voir le meme
+            # /backup que l'hote ou un autre addon). On journalise ce que le
+            # process Core voit reellement, pour un diagnostic exploitable
+            # sans acces SSH.
+            self._log_local_backup_dir_diagnostic()
             raise BackupNasSyncError(
                 f"repertoire local introuvable : {self.local_backup_dir}"
             )
@@ -391,6 +399,51 @@ class BackupNasSyncCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         candidates.sort(key=lambda item: item[0])
         mtime, filename, path = candidates[0]
         return filename, path, mtime
+
+    def _log_local_backup_dir_diagnostic(self) -> None:
+        target = self.local_backup_dir
+        if target.exists():
+            kind = "fichier" if target.is_file() else "ni fichier ni dossier (special ?)"
+            _LOGGER.warning(
+                "backup_nas_sync: %s existe mais n'est pas un dossier (%s)",
+                target,
+                kind,
+            )
+            return
+
+        parent = target.parent
+        if not parent.exists():
+            _LOGGER.warning(
+                "backup_nas_sync: %s n'existe pas, son parent %s non plus "
+                "(vu depuis ce process Home Assistant Core - peut differer "
+                "de ce que voit un acces SSH direct ou un autre addon sur "
+                "une installation HAOS/Supervisor, chaque conteneur ayant "
+                "ses propres montages)",
+                target,
+                parent,
+            )
+            return
+
+        try:
+            siblings = sorted(p.name for p in parent.iterdir())
+        except OSError as err:
+            _LOGGER.warning(
+                "backup_nas_sync: %s n'existe pas ; impossible de lister son "
+                "parent %s (%s) - probable refus de permission pour ce "
+                "process",
+                target,
+                parent,
+                err,
+            )
+            return
+
+        _LOGGER.warning(
+            "backup_nas_sync: %s n'existe pas dans ce conteneur Home "
+            "Assistant Core ; contenu reel de %s vu par ce process : %s",
+            target,
+            parent,
+            siblings,
+        )
 
     @staticmethod
     def _read_and_hash(path: Path) -> tuple[str, bytes]:
