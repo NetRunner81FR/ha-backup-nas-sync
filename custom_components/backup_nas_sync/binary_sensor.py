@@ -30,9 +30,9 @@ class BackupNasSyncProblemBinarySensor(
         super().__init__(coordinator)
         site_name = entry.data[CONF_SITE_NAME]
         self._attr_unique_id = f"{entry.entry_id}_probleme"
-        self._attr_name = f"Backup NAS Sync {site_name} - Probleme"
+        self._attr_name = f"Backup NAS Sync {site_name} - Problème"
 
     @property
     def is_on(self) -> bool:
         data = self.coordinator.data or {}
-        return data.get("status") == STATUS_ERROR or (data.get("consecutive_failures") or 0) > 0
+        return bool(data.get("retention_warning")) or data.get("status") == STATUS_ERROR or (data.get("consecutive_failures") or 0) > 0

@@ -17,17 +17,11 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 
 from .const import (
-    CONF_LOCAL_BACKUP_DIR,
-    CONF_POLL_INTERVAL,
     CONF_REMOTE_BASE_DIR,
     CONF_RETENTION_COUNT,
     CONF_SITE_NAME,
-    CONF_STABLE_SECONDS,
     CONF_SYNOLOGY_ENTRY_ID,
-    DEFAULT_LOCAL_BACKUP_DIR,
-    DEFAULT_POLL_INTERVAL,
     DEFAULT_RETENTION_COUNT,
-    DEFAULT_STABLE_SECONDS,
     DOMAIN,
     SYNOLOGY_DSM_DOMAIN,
 )
@@ -53,17 +47,8 @@ def _schema(
                 CONF_REMOTE_BASE_DIR, default=defaults.get(CONF_REMOTE_BASE_DIR, "")
             ): str,
             vol.Optional(
-                CONF_LOCAL_BACKUP_DIR, default=defaults.get(CONF_LOCAL_BACKUP_DIR, DEFAULT_LOCAL_BACKUP_DIR)
-            ): str,
-            vol.Optional(
-                CONF_POLL_INTERVAL, default=defaults.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
-            ): int,
-            vol.Optional(
                 CONF_RETENTION_COUNT, default=defaults.get(CONF_RETENTION_COUNT, DEFAULT_RETENTION_COUNT)
-            ): int,
-            vol.Optional(
-                CONF_STABLE_SECONDS, default=defaults.get(CONF_STABLE_SECONDS, DEFAULT_STABLE_SECONDS)
-            ): int,
+            ): vol.All(vol.Coerce(int), vol.Range(min=1)),
         }
     )
     return vol.Schema(schema)
@@ -71,7 +56,9 @@ def _schema(
 
 def _validate_remote_dir(remote_dir: str) -> str | None:
     """Return an error key, or None if the remote dir is valid."""
-    if not remote_dir.startswith("/"):
+    if (not remote_dir.startswith("/") or remote_dir == "/"
+            or any(part in {".", ".."} for part in remote_dir.split("/"))
+            or "\\" in remote_dir or any(ord(c) < 32 for c in remote_dir)):
         return "invalid_remote_dir"
     if re.match(r"^/volume\d+(/|$)", remote_dir):
         # Erreur constatee en usage reel : un chemin systeme de fichiers
@@ -84,7 +71,7 @@ def _validate_remote_dir(remote_dir: str) -> str | None:
 class BackupNasSyncConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Backup NAS Sync."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

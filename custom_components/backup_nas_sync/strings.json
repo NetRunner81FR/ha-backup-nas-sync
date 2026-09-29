@@ -3,54 +3,42 @@
     "step": {
       "user": {
         "title": "NR Backup NAS Sync",
-        "description": "Copie fiable des sauvegardes locales vers le NAS, en reutilisant la connexion d'une integration Synology DSM deja configuree (contourne l'agent de sauvegarde natif Synology, source connue de corruption).",
+        "description": "Native Home Assistant backup destination using your existing Synology DSM connection. Select this agent in Settings > System > Backups after setup. Use an existing dedicated FileStation folder.",
         "data": {
-          "synology_entry_id": "Integration Synology DSM a utiliser",
-          "site_name": "Nom du site",
-          "remote_base_dir": "Repertoire NAS cible",
-          "local_backup_dir": "Repertoire local des backups",
-          "poll_interval": "Intervalle de verification (secondes)",
-          "retention_count": "Nombre de versions conservees",
-          "stable_seconds": "Delai de stabilisation (secondes)"
+          "synology_entry_id": "Synology DSM integration",
+          "site_name": "Site name",
+          "remote_base_dir": "Existing NAS FileStation folder",
+          "retention_count": "NAS backups to keep (minimum 1)"
         },
         "data_description": {
-          "site_name": "Identifie ce lieu/cette instance sur le NAS. Sert uniquement au nom des entites - n'affecte pas le chemin NAS. Ne peut plus etre modifie apres la creation (voir Configurer pour les autres parametres).",
-          "remote_base_dir": "Chemin FileStation COMPLET - PAS un chemin systeme de fichiers. Ne jamais inclure /volumeN/, le dossier partage Synology est adresse directement par son nom. Correct : /BackUpHA/ha_backup_recette. Incorrect : /volume1/BackUpHA/ha_backup_recette.",
-          "local_backup_dir": "Chemin dans le conteneur Home Assistant ou les sauvegardes locales sont stockees. /config/backups par defaut (installation Docker standard sans Supervisor).",
-          "poll_interval": "A quelle frequence verifier si un nouveau backup local est pret a etre synchronise.",
-          "retention_count": "Nombre de sauvegardes conservees sur le NAS - les plus anciennes sont supprimees au-dela, jamais la derniere copie valide.",
-          "stable_seconds": "Duree sans modification du fichier local avant de le considerer complet et pret a etre transfere."
+          "site_name": "Stable site identity. Recreating the entry changes the archive namespace; preserve the entry for existing backups.",
+          "remote_base_dir": "Absolute FileStation path, for example /Backups/sandbox. Never use /volumeN or a folder shared with another environment.",
+          "retention_count": "Applied by this integration after a verified upload. Legacy backups are preserved. Retention errors are reported separately."
         }
       },
       "reconfigure": {
-        "title": "NR Backup NAS Sync - modifier les parametres",
-        "description": "Site : {site_name} (non modifiable ici - supprimer puis recreer l'integration pour renommer un site). Les autres parametres sont modifies immediatement, sans supprimer l'entite.",
+        "title": "NR Backup NAS Sync",
+        "description": "Native Home Assistant backup destination using your existing Synology DSM connection. Select this agent in Settings > System > Backups after setup. Use an existing dedicated FileStation folder.",
         "data": {
-          "synology_entry_id": "Integration Synology DSM a utiliser",
-          "remote_base_dir": "Repertoire NAS cible",
-          "local_backup_dir": "Repertoire local des backups",
-          "poll_interval": "Intervalle de verification (secondes)",
-          "retention_count": "Nombre de versions conservees",
-          "stable_seconds": "Delai de stabilisation (secondes)"
+          "synology_entry_id": "Synology DSM integration",
+          "remote_base_dir": "Existing NAS FileStation folder",
+          "retention_count": "NAS backups to keep (minimum 1)"
         },
         "data_description": {
-          "remote_base_dir": "Chemin FileStation COMPLET - PAS un chemin systeme de fichiers. Ne jamais inclure /volumeN/, le dossier partage Synology est adresse directement par son nom. Correct : /BackUpHA/ha_backup_recette. Incorrect : /volume1/BackUpHA/ha_backup_recette.",
-          "local_backup_dir": "Chemin dans le conteneur Home Assistant ou les sauvegardes locales sont stockees. /config/backups par defaut (installation Docker standard sans Supervisor).",
-          "poll_interval": "A quelle frequence verifier si un nouveau backup local est pret a etre synchronise.",
-          "retention_count": "Nombre de sauvegardes conservees sur le NAS - les plus anciennes sont supprimees au-dela, jamais la derniere copie valide.",
-          "stable_seconds": "Duree sans modification du fichier local avant de le considerer complet et pret a etre transfere."
+          "remote_base_dir": "Absolute FileStation path, for example /Backups/sandbox. Never use /volumeN or a folder shared with another environment.",
+          "retention_count": "Applied by this integration after a verified upload. Legacy backups are preserved. Retention errors are reported separately."
         }
       }
     },
     "error": {
-      "invalid_site_name": "Le nom du site ne peut pas etre vide.",
-      "invalid_remote_dir": "Le repertoire NAS cible doit commencer par / (chemin FileStation absolu, ex. /BackUpHA/ha_backup_recette).",
-      "remote_dir_has_volume_prefix": "Ne pas inclure /volumeN/ dans le chemin - FileStation adresse le dossier partage directement par son nom (ex. /BackUpHA/... et non /volume1/BackUpHA/...)."
+      "invalid_site_name": "Site name must not be empty.",
+      "invalid_remote_dir": "Use an absolute FileStation folder, not / or a path containing traversal.",
+      "remote_dir_has_volume_prefix": "Use the shared folder name, not /volumeN."
     },
     "abort": {
-      "already_configured": "Ce site est deja configure.",
-      "no_synology_dsm": "Aucune integration Synology DSM chargee - configurez-la d'abord (Parametres > Appareils et services > Ajouter une integration > Synology DSM).",
-      "reconfigure_successful": "Parametres mis a jour."
+      "already_configured": "This site is already configured.",
+      "no_synology_dsm": "Configure and load the Synology DSM integration first.",
+      "reconfigure_successful": "Settings updated."
     }
   }
 }

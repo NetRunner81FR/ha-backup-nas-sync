@@ -1,6 +1,8 @@
 {
   "name": "NR Backup NAS Sync",
   "render_readme": true,
-  "domains": ["backup_nas_sync"],
-  "homeassistant": "2024.11.0"
+  "domains": [
+    "backup_nas_sync"
+  ],
+  "homeassistant": "2026.9.3"
 }

@@ -1,0 +1,71 @@
+# Exemple de dashboard Lovelace pour suivre NR Backup NAS Sync.
+#
+# A adapter : remplacer <site> par le nom du site choisi a la
+# configuration (ex. "conflans", "brain", "penestin") - visible dans
+# le nom des entites (Parametres > Appareils et services > NR Backup
+# NAS Sync > l'entree > Entites).
+#
+# Utilisation : coller ce bloc dans une vue Lovelace existante (mode
+# YAML), ou creer une nouvelle carte "vertical-stack" et coller le
+# contenu de "cards:" ci-dessous a l'interieur.
+
+type: vertical-stack
+cards:
+  - type: entities
+    title: NR Backup NAS Sync - <site>
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.backup_nas_sync_<site>_probleme
+        name: Problème détecté
+      - entity: sensor.backup_nas_sync_<site>_dernier_controle
+        name: Dernier contrôle
+      - entity: update.backup_nas_sync_update
+        name: Mise à jour du composant
+
+  - type: markdown
+    content: >
+      {% set entity_id = 'sensor.backup_nas_sync_<site>_dernier_controle' %}
+      {% if states(entity_id) not in ['unknown', 'unavailable'] %}
+      **Résultat :** {{ state_attr(entity_id, 'resultat') | default('inconnu') }}
+
+      **Dernière sauvegarde traitée :** {{ state_attr(entity_id, 'backup_name') | default('aucune') }}
+
+      **Échecs consécutifs :** {{ state_attr(entity_id, 'echecs_consecutifs') | default(0) }}
+
+      {% if state_attr(entity_id, 'erreur') %}
+      **Erreur :** {{ state_attr(entity_id, 'erreur') }}
+      {% endif %}
+
+      {% set checksum_source = state_attr(entity_id, 'checksum_source') %}
+      {% set checksum_nas = state_attr(entity_id, 'checksum_nas') %}
+      {% if checksum_source and checksum_nas %}
+      **Checksum source :** `{{ checksum_source }}`
+
+      **Checksum NAS :** `{{ checksum_nas }}`
+
+      **Checksums identiques :** {{ 'oui' if checksum_source == checksum_nas else 'NON - à vérifier' }}
+      {% endif %}
+      {% else %}
+      Entité indisponible - vérifier le nom du site dans l'identifiant
+      d’entité (`{{ entity_id }}`).
+      {% endif %}
+
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.backup_nas_sync_<site>_probleme
+        state: "on"
+    card:
+      type: markdown
+      content: >
+        ## ⚠️ Dernière anomalie
+
+        ```
+        {{ state_attr('sensor.backup_nas_sync_<site>_dernier_controle', 'erreur') or state_attr('sensor.backup_nas_sync_<site>_dernier_controle', 'avertissement_retention') or 'Voir les journaux Home Assistant' }}
+        ```
+
+  - type: button
+    name: Ouvrir les sauvegardes natives
+    icon: mdi:backup-restore
+    tap_action:
+      action: navigate
+      navigation_path: /config/backup

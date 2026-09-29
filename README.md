@@ -1,89 +1,108 @@
-# NR Backup NAS Sync
+# NR Backup NAS Sync - native BackupAgent
 
-Integration Home Assistant qui fiabilise la copie des sauvegardes locales
-vers un NAS Synology distant (accessible en HTTPS) et controle leur
-integrite par checksum.
-
-## Pourquoi
-
-L'agent de sauvegarde natif Synology de HA Backup peut produire des
-copies corrompues sans avertissement visible avant qu'une restauration
-reelle echoue. Ce composant contourne ce chemin : il ne cree pas de
-backup, il ne fait que copier de maniere fiable un backup deja cree en
-local (sain) vers le NAS, avec verification par round-trip.
+Candidate **0.5.0-beta.1**, Home Assistant **2026.9.3 minimum**.
+Cycle reel SANDBOX (upload natif, round-trip SHA-256, reprise apres restart)
+valide le 2026-09-29 ; l'UI Backup affiche encore une erreur d'une autre
+destination Synology DSM. Ne pas installer en PROD sur cette base. Aucun secret NAS supplementaire n'est demande.
 
 ## Fonctionnement
 
-1. Surveille le repertoire local des sauvegardes HA (`<config>/backups`
-   par defaut).
-2. Des qu'un nouveau backup est detecte et stabilise (aucune modification
-   depuis `stable_seconds`), calcule son empreinte SHA-256 et le lit en
-   memoire.
-3. Transfere le fichier vers le NAS (API FileStation, HTTPS) sous un nom
-   temporaire (`<nom>.uploading`).
-4. Retelecharge cette copie temporaire et recalcule son empreinte
-   SHA-256 (verification reelle de bout en bout, pas seulement une
-   confirmation d'ecriture - il n'existe pas d'API de checksum distant
-   native sur FileStation).
-5. Si les empreintes correspondent : upload sous le nom final (pas de
-   rename cote FileStation - un second envoi des memes octets), retention
-   appliquee (les copies les plus anciennes au-dela de `retention_count`
-   sont supprimees, jamais la derniere copie valide), fichier temporaire
-   supprime. Si elles different, ou si une etape echoue : fichier
-   temporaire supprime, aucune copie valide existante n'est touchee,
-   nouvelle tentative au cycle suivant (3 tentatives maximum par fichier,
-   puis abandon pour laisser la file progresser sur les fichiers plus
-   recents), notification envoyee via `notifications_manager.notify`
-   uniquement sur transition (echec initial, ou retour a la normale -
-   jamais a chaque succes repete).
+1. Le gestionnaire Backup HA fournit un flux (Core Docker comme HAOS/Supervisor).
+2. L'agent spoule ce flux dans un fichier temporaire non nomme, 0600, sous `.storage` (sans scanner les sauvegardes locales ni charger le tar entier en RAM), puis le transfere avec une taille connue via FileStation. SHA-256 est calcule pendant le staging.
+3. Il relit l'archive NAS effectivement ecrite et compare SHA-256 et taille.
+4. Il publie et relit les metadonnees natives seulement apres cette verification.
+5. Il applique sa propre retention NAS, sans jamais supprimer le nouvel upload.
 
-## Pas de nouveaux identifiants
+Un sensor expose le dernier transfert (et non un controle periodique). Le binary
+sensor signale une erreur de transfert ou un avertissement de retention. Les
+notifications passent uniquement par notifications_manager.notify avec category
+`alerte`, roles `proprietaire`, module `ha_backup` ; sans ce service les diagnostics
+restent disponibles dans les entites et l'interface Backup.
 
-Ce composant ne demande jamais d'hote/utilisateur/mot de passe NAS : il
-reutilise la connexion DSM deja authentifiee d'une integration
-**Synology DSM** (`synology_dsm`) deja configuree sur cette instance
-Home Assistant. Installation identique et simple sur plusieurs
-instances HA distinctes partageant le meme NAS distant.
+## Installation / configuration
 
-## Entites
+- SANDBOX #185 : installer directement depuis la branche SANDBOX par le script
+  ad hoc `deploy-ha-sandbox.sh` (autorisation utilisateur 2026-09-29), sans
+  publication GitHub/HACS. Le script copie `ha-config/custom_components` et
+  redemarre HA. Ne jamais utiliser de copie SSH/rsync/Docker manuelle.
+- Avant DEV, prevoir la publication beta HACS et le cycle de promotion normal.
+- Configurer et charger Synology DSM avec un compte FileStation adapte.
+- Creer un dossier FileStation dedie a cette instance, distinct entre environnements.
+- Ajouter NR Backup NAS Sync : choisir l'entree DSM, le site, le dossier absolu
+  FileStation (par exemple `/Backups/sandbox`, jamais `/volume1/Backups/...`) et
+  le nombre de sauvegardes a conserver (minimum 1, defaut 5).
+- Dans Parametres > Systeme > Sauvegardes, selectionner explicitement cet agent
+  comme destination. L'integration ne change ni calendrier, ni chiffrement, ni
+  destinations existantes. Conserver une destination locale de secours.
+- Pour modifier les parametres, utiliser Reconfigurer sur l'entree existante.
+  Ne pas supprimer/recreer l'entree : son entry_id identifie les archives NAS.
 
-- `sensor.backup_nas_sync_<site>_dernier_controle` : horodatage et
-  attributs du dernier controle (resultat, backup, checksums, echecs
-  consecutifs, erreur).
-- `binary_sensor.backup_nas_sync_<site>_probleme` : `on` si le dernier
-  cycle a echoue.
+Le staging est ferme/supprime automatiquement, meme si HA redemarre ou l'upload echoue. Sur un tres gros backup, prevoir assez d'espace libre sur le volume de configuration HA. La progression UI est rapportee apres transfert FileStation, sans granularite pendant l'upload.
 
-## Service
+La bibliotheque DSM est celle epinglee par l'integration native Synology DSM de HA
+(pas de dependance concurrente installee par ce composant).
 
-- `backup_nas_sync.sync_now` : force un cycle immediat (sans attendre
-  `poll_interval`).
+## Migration depuis v0.4.0
 
-## Configuration initiale
+Sauvegarder la configuration HA avant promotion manuelle. La migration v1 -> v2
+conserve l'entree, la connexion DSM, le site et le dossier cible. Elle retire
+`local_backup_dir`, `poll_interval`, `stable_seconds` de data/options. Aucun
+fallback filesystem : les sauvegardes existantes ne sont pas scannees ni transferees
+automatiquement. Utiliser le flux natif de creation/upload HA.
 
-Via l'interface Home Assistant (Parametres > Appareils et services >
-Ajouter une integration > NR Backup NAS Sync) :
+`retention_count` est conserve (0/negatif devient 1 ; valeur invalide devient 5).
+`backup_nas_sync.sync_now` disparait : adapter les automatisations et boutons a
+l'interface native, sans appel de service de remplacement implicite.
 
-| Parametre | Role |
-| --- | --- |
-| Integration Synology DSM a utiliser | Quelle connexion `synology_dsm` deja configuree reutiliser. |
-| Nom du site | Identifie ce lieu/cette instance dans le nom des entites - n'affecte pas le chemin NAS. **Non modifiable apres creation** (voir ci-dessous). |
-| Repertoire NAS cible | Chemin FileStation complet et definitif (ex. `/BackUpHA/ha_backup_recette`) - jamais de prefixe `/volumeN/`, le dossier partage Synology est adresse directement par son nom. |
-| Repertoire local des backups | Ou HA stocke ses sauvegardes locales (`/config/backups` par defaut, installation Docker standard sans Supervisor). |
-| Intervalle de verification | Frequence de detection d'un nouveau backup pret a synchroniser. |
-| Nombre de versions conservees | Retention sur le NAS - la derniere copie valide n'est jamais purgee. |
-| Delai de stabilisation | Duree sans modification du fichier local avant de le considerer complet. |
+Les unique_id des deux entites sont inchanges : `*_dernier_controle` et
+`*_probleme`. Les entity_id existants restent au registre. `last_checked` signifie
+maintenant dernier transfert agent. Les checksums et echecs consecutifs restent
+exposes ; `avertissement_retention` distingue une purge incomplete d'un transfert
+echoue. L'etat natif est stocke separement du dernier resultat de polling v0.4.0.
+L'exemple `examples/dashboard.yaml` ouvre les sauvegardes natives et affiche ces
+anomalies. Le premier resultat reste idle jusqu'au premier transfert.
 
-## Modifier les parametres
+Les anciens tar ne sont ni importes dans la liste native, ni supprimes par la
+nouvelle retention. Les conserver pour restauration manuelle via HA et ne les
+purger qu'apres validation operateur. La retention concerne les nouveaux backups
+publies par cette entree ; des suppressions explicites dans HA restent possibles.
 
-Depuis Parametres > Appareils et services > NR Backup NAS Sync > menu
-"..." de l'entree > **Configurer** : tous les parametres ci-dessus sauf
-le nom du site sont modifiables sans supprimer/recreer l'integration -
-la synchronisation reprend avec les nouvelles valeurs immediatement
-(rechargement automatique de l'entree, pas de redemarrage HA requis).
-Renommer un site reste une operation de suppression/recreation
-(rare en pratique, le nom du site ne sert qu'a l'affichage).
+## Integrite, reprise et retention
 
-## Aucun secret versionne
+Le namespace `bns-<sha256(entry_id)>-` isole les objets de cette entree. Les IDs
+sont haches ; chaque tentative ecrit un tar UUID distinct. Le JSON par backup_id
+contient les metadonnees HA, le nom tar et SHA-256 : seul ce marqueur rend une
+copie visible. Aucun fichier existant n'est ecrase par une tentative concurrente
+de cet agent (operations serialisees).
 
-Aucun identifiant NAS n'est gere ni stocke par ce composant - il ne fait
-que reutiliser une session `synology_dsm` deja authentifiee par ailleurs.
+- Doublon identique : accepte apres reverification du contenu et de l'ancienne
+  copie ; conflit meme ID / contenu ou metadonnees differents : refuse.
+- Archive absente : BackupNotFound ; NAS inaccessible : erreur, jamais liste vide.
+- Archive corrompue au download : erreur de checksum en fin de flux ; ne pas utiliser
+  un telechargement interrompu avant sa fin comme preuve d'integrite.
+- Metadonnees invalides : erreur explicite, retention bloquee par prudence.
+- Upload interrompu : nettoyage best effort de l'objet non publie ; retry autorise.
+- Publication JSON ambigue : conserver le tar verifie (ne pas risquer de detruire
+  un backup effectivement publie). Retry accepte si JSON valide ; JSON corrompu
+  impose inspection/reparation manuelle, aucun ecrasement automatique.
+- Crash : objets sans sidecar ignores par la liste/retention. Apres arret des
+  transferts, un operateur peut comparer les sidecars aux tar et supprimer seulement
+  les orphelins prouves du namespace. Aucun nettoyage global automatique.
+- Retention : dates natives, sauvegarde courante protegee meme si ancienne ; erreurs
+  de suppression partielles signalees, transfert verifie reste OK. Une nouvelle
+  demande d'upload verifiee reessaie la retention (pas de timer concurrent).
+
+## Rollback et validation
+
+Rollback : restaurer v0.4.0 et la configuration HA pre-migration, ou recreer une
+entree v1 avec ses anciennes options. Ne pas retrograder une entree v2 en place.
+Ne jamais effacer les archives natives lors du rollback ; conserver les sidecars
+et l'entry_id pour une reprise v0.5. Sur HAOS le rollback ne corrige pas le defaut
+historique d'acces au repertoire local.
+
+Tests locaux : `python3 -m unittest discover -s tests/backup_nas_sync -v` depuis
+le depot Factory. Ces mocks ne prouvent pas le chargement HA ni un vrai transfert.
+Pour #185, SANDBOX est deploye directement par le script ad hoc sur decision
+utilisateur. Avant DEV manuel : release beta HACS. Puis RECETTE et PROD manuelle.
+Le test final HAOS/PROD exige un GO PO distinct. Voir issue Factory #185 et sa
+specification `docs/ia/specs/185-backup-agent-natif.md`.

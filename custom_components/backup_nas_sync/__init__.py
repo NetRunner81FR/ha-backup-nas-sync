@@ -1,39 +1,45 @@
-"""Backup NAS Sync - surcouche fiable de copie/controle des sauvegardes HA vers NAS.
-
-Contourne l'integration native HA Backup "NAS Synology" (source
-confirmee de corruption des copies, cf. issue #161) : s'appuie sur les
-backups locaux natifs (sains) et gere son propre transfert SSH/SFTP
-avec verification checksum SHA-256.
-"""
+"""Native backup destination reusing an authenticated Synology DSM entry."""
 from __future__ import annotations
 
-import logging
-
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import __version__ as HA_VERSION
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryError
+from awesomeversion import AwesomeVersion
 
-from .const import DOMAIN, PLATFORMS
-from .coordinator import BackupNasSyncCoordinator
+from .const import DOMAIN, PLATFORMS, DATA_AGENT_LISTENERS, CONF_RETENTION_COUNT, DEFAULT_RETENTION_COUNT
+from .coordinator import BackupNasSyncCoordinator, normalize_retention
 
-_LOGGER = logging.getLogger(__name__)
+MIN_HA_VERSION = "2026.9.3"
+_OBSOLETE = {"local_backup_dir", "poll_interval", "stable_seconds"}
 
-SERVICE_SYNC_NOW = "sync_now"
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Remove polling options without changing NAS identity or native HA settings."""
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        data = {key: value for key, value in entry.data.items() if key not in _OBSOLETE}
+        options = {key: value for key, value in entry.options.items() if key not in _OBSOLETE}
+        data[CONF_RETENTION_COUNT] = normalize_retention(data.get(CONF_RETENTION_COUNT, DEFAULT_RETENTION_COUNT))
+        hass.config_entries.async_update_entry(entry, data=data, options=options, version=2)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if AwesomeVersion(HA_VERSION) < AwesomeVersion(MIN_HA_VERSION):
+        raise ConfigEntryError(f"Home Assistant {MIN_HA_VERSION} minimum requis")
     coordinator = BackupNasSyncCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
-
+    await coordinator.async_initialize()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    @callback
+    def notify_listeners() -> None:
+        for listener in tuple(hass.data.get(DATA_AGENT_LISTENERS, [])):
+            listener()
+
+    entry.async_on_unload(entry.async_on_state_change(notify_listeners))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    async def _handle_sync_now(call: ServiceCall) -> None:
-        await coordinator.async_force_sync()
-
-    if not hass.services.has_service(DOMAIN, SERVICE_SYNC_NOW):
-        hass.services.async_register(DOMAIN, SERVICE_SYNC_NOW, _handle_sync_now)
-
     return True
 
 
@@ -41,6 +47,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        if not hass.data[DOMAIN]:
-            hass.services.async_remove(DOMAIN, SERVICE_SYNC_NOW)
+        for listener in tuple(hass.data.get(DATA_AGENT_LISTENERS, [])):
+            listener()
     return unloaded

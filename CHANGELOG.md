@@ -1,16 +1,19 @@
 # Changelog
 
-## 0.4.1-beta.1
+## 0.5.0-beta.1 - candidate #185 (SANDBOX reel, pas release GitHub)
 
-- Diagnostic : quand le repertoire local de backups est introuvable
-  (`Path.is_dir()` avale silencieusement toute erreur - inexistant,
-  permission refusee, mauvais type), journalise desormais le contenu
-  reel du dossier parent vu par ce process Home Assistant Core
-  (ou explique pourquoi ce n'est pas possible). Utile sur HAOS/
-  Supervisor ou un acces SSH direct/un autre addon peut voir un montage
-  different de celui du conteneur Core. Suite a un incident PROD reel
-  (2026-09-28) ou `/backup` restait introuvable pour le composant
-  malgre des permissions ouvertes verifiees par SSH.
+- Migration franche BackupAgent natif HA >= 2026.9.3, flux FileStation sans scan local.
+- Flux HA spoule dans un TemporaryFile non nomme 0600, puis upload FileStation
+  a taille connue : evite la corruption multipart chunked observee en SANDBOX.
+- SHA-256 et taille verifies sur le tar reel avant publication des metadonnees.
+- List/get/download/delete natifs, namespace par entree et retries idempotents.
+- Retention NAS preservee, courant protege, erreurs partielles visibles.
+- Migration entree v2 ; options polling et service sync_now retires.
+- Entites recyclees sans changement de unique_id, warning retention distinct.
+- Bibliotheque DSM fournie exclusivement par HA pour eviter un conflit de versions.
+- Anciens tar conserves hors retention ; rollback pre-migration documente.
+- 34 tests unitaires PASS ; cycle SANDBOX HA -> NAS et SHA-256 reels PASS le
+  2026-09-29. Download/delete/retention > seuil et HAOS restent a valider.
 
 ## 0.4.0
 
