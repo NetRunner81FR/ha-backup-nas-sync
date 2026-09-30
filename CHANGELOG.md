@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0-beta.2 - correction asyncio #185
+
+- Ouvre et ferme le lecteur temporaire de l'upload FileStation dans
+  l'executor Home Assistant ; aucun appel `open` du composant ne bloque
+  la boucle asyncio pendant `BackupAgent.async_upload_backup`.
+
 ## 0.5.0-beta.1 - candidate #185 (SANDBOX reel, pas release GitHub)
 
 - Migration franche BackupAgent natif HA >= 2026.9.3, flux FileStation sans scan local.

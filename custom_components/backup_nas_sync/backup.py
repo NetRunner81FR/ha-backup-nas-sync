@@ -24,6 +24,11 @@ _CHUNK = 1024 * 1024
 _META_LIMIT = 1024 * 1024
 
 
+def _open_staged_reader(file_descriptor: int):
+    """Open the staged tar in HA's executor, never from its event loop."""
+    return open(file_descriptor, "rb", closefd=False)
+
+
 async def async_get_backup_agents(hass: HomeAssistant, **kwargs: Any) -> list[BackupAgent]:
     """Expose only loaded entries, keeping a single lock/agent per entry."""
     return [hass.data[DOMAIN][entry.entry_id].agent
@@ -269,11 +274,19 @@ class BackupNasSyncAgent(BackupAgent):
                         raise BackupAgentError("Taille du flux HA incorrecte")
                     await self.coordinator.hass.async_add_executor_job(staged.flush)
                     await self.coordinator.hass.async_add_executor_job(staged.seek, 0)
-                    with open(staged.fileno(), "rb", closefd=False) as source:
+                    # `open` and `close` are filesystem operations: schedule both
+                    # outside HA's event loop.  The reader stays open across the
+                    # awaited FileStation upload and is always closed on failure.
+                    source = await self.coordinator.hass.async_add_executor_job(
+                        _open_staged_reader, staged.fileno()
+                    )
+                    try:
                         uploaded = await self._fs.upload_file(
                             path=self.coordinator.remote_dir, filename=filename,
                             source=source, create_parents=False,
                         )
+                    finally:
+                        await self.coordinator.hass.async_add_executor_job(source.close)
                     if not uploaded:
                         raise BackupAgentError("Transfert NAS refusé")
                     on_progress(bytes_uploaded=size)
