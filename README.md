@@ -1,108 +1,87 @@
-# NR Backup NAS Sync - native BackupAgent
+# NR Backup NAS Sync
 
-Version stable **0.5.0**, Home Assistant **2026.9.3 minimum**.
-Validation DEV : upload natif, round-trip SHA-256, suppression explicite QA
-bornee et reprise apres restart. La prevalidation RECETTE de la destination
-Synology DSM reste a corriger avant tout deploiement PROD manuel. Aucun secret NAS supplementaire n'est demande.
+**NR Backup NAS Sync** ajoute un agent de destination dans le gestionnaire de
+sauvegardes natif de Home Assistant. Il transfere les sauvegardes vers un NAS
+Synology via FileStation et les rend disponibles dans l'interface standard de
+Home Assistant.
 
-## Fonctionnement
+Version publique : **0.5.0**. Requiert Home Assistant **2026.9.3** ou plus
+recent et l'integration native **Synology DSM** configuree.
 
-1. Le gestionnaire Backup HA fournit un flux (Core Docker comme HAOS/Supervisor).
-2. L'agent spoule ce flux dans un fichier temporaire non nomme, 0600, sous `.storage` (sans scanner les sauvegardes locales ni charger le tar entier en RAM), puis le transfere avec une taille connue via FileStation. SHA-256 est calcule pendant le staging.
-3. Il relit l'archive NAS effectivement ecrite et compare SHA-256 et taille.
-4. Il publie et relit les metadonnees natives seulement apres cette verification.
-5. Il applique sa propre retention NAS, sans jamais supprimer le nouvel upload.
+> Les pre-versions etaient destinees aux installations Home Assistant Core
+> dans Docker. La version 0.5.0 utilise l'API native BackupAgent et apporte la
+> compatibilite avec Home Assistant OS / Supervisor.
 
-Un sensor expose le dernier transfert (et non un controle periodique). Le binary
-sensor signale une erreur de transfert ou un avertissement de retention. Les
-notifications passent uniquement par notifications_manager.notify avec category
-`alerte`, roles `proprietaire`, module `ha_backup` ; sans ce service les diagnostics
-restent disponibles dans les entites et l'interface Backup.
+## Installation en production
 
-## Installation / configuration
+1. Dans HACS, ajouter si necessaire le depot
+   `https://github.com/NetRunner81FR/ha-backup-nas-sync` en type
+   **Integration**.
+2. Installer **NR Backup NAS Sync** version `0.5.0`, puis redemarrer Home
+   Assistant.
+3. Verifier que l'integration native **Synology DSM** est deja configuree avec
+   un compte ayant les droits FileStation sur le dossier de sauvegarde.
+4. Sur le NAS, creer un dossier FileStation dedie a Home Assistant, par
+   exemple `/Backups/home-assistant`. Ne pas utiliser un chemin systeme tel que
+   `/volume1/...` dans la configuration Home Assistant.
+5. Dans **Parametres > Appareils et services > Ajouter une integration**,
+   ajouter **NR Backup NAS Sync**. Choisir l'entree Synology DSM, renseigner un
+   nom de site, le dossier FileStation dedie et le nombre de sauvegardes a
+   conserver (minimum 1, valeur par defaut 5).
+6. Dans **Parametres > Systeme > Sauvegardes**, ouvrir les destinations et
+   selectionner explicitement **NR Backup NAS Sync**. L'integration ne change
+   ni le calendrier, ni le chiffrement, ni les autres destinations : conservez
+   une destination de secours adaptee a votre politique de sauvegarde.
 
-- SANDBOX #185 : installer directement depuis la branche SANDBOX par le script
-  ad hoc `deploy-ha-sandbox.sh` (autorisation utilisateur 2026-09-29), sans
-  publication GitHub/HACS. Le script copie `ha-config/custom_components` et
-  redemarre HA. Ne jamais utiliser de copie SSH/rsync/Docker manuelle.
-- Avant DEV, prevoir la publication beta HACS et le cycle de promotion normal.
-- Configurer et charger Synology DSM avec un compte FileStation adapte.
-- Creer un dossier FileStation dedie a cette instance, distinct entre environnements.
-- Ajouter NR Backup NAS Sync : choisir l'entree DSM, le site, le dossier absolu
-  FileStation (par exemple `/Backups/sandbox`, jamais `/volume1/Backups/...`) et
-  le nombre de sauvegardes a conserver (minimum 1, defaut 5).
-- Dans Parametres > Systeme > Sauvegardes, selectionner explicitement cet agent
-  comme destination. L'integration ne change ni calendrier, ni chiffrement, ni
-  destinations existantes. Conserver une destination locale de secours.
-- Pour modifier les parametres, utiliser Reconfigurer sur l'entree existante.
-  Ne pas supprimer/recreer l'entree : son entry_id identifie les archives NAS.
+Pour modifier le dossier ou la retention, utiliser **Reconfigurer** sur
+l'entree existante. Ne pas supprimer puis recreer l'entree : son identifiant
+associe les archives deja publiees.
 
-Le staging est ferme/supprime automatiquement, meme si HA redemarre ou l'upload echoue. Sur un tres gros backup, prevoir assez d'espace libre sur le volume de configuration HA. La progression UI est rapportee apres transfert FileStation, sans granularite pendant l'upload.
+## Ce que fait l'agent
 
-La bibliotheque DSM est celle epinglee par l'integration native Synology DSM de HA
-(pas de dependance concurrente installee par ce composant).
+1. Home Assistant fournit le flux de la sauvegarde a l'agent.
+2. L'agent le prepare dans un fichier temporaire prive, puis l'envoie au NAS
+   avec FileStation.
+3. Il relit l'archive ecrite sur le NAS et compare sa taille et son SHA-256
+   avec la source.
+4. La sauvegarde n'apparait dans Home Assistant qu'apres cette verification.
+5. La retention est appliquee uniquement aux archives de cette entree, sans
+   supprimer la sauvegarde qui vient d'etre transferee.
 
-## Migration depuis v0.4.0
+Les entites de l'integration exposent le dernier transfert et les anomalies de
+transfert ou de retention. La verification d'integrite est effectuee a chaque
+upload ; elle ne remplace pas les essais periodiques de restauration.
 
-Sauvegarder la configuration HA avant promotion manuelle. La migration v1 -> v2
-conserve l'entree, la connexion DSM, le site et le dossier cible. Elle retire
-`local_backup_dir`, `poll_interval`, `stable_seconds` de data/options. Aucun
-fallback filesystem : les sauvegardes existantes ne sont pas scannees ni transferees
-automatiquement. Utiliser le flux natif de creation/upload HA.
+## Mise a jour depuis v0.4.x
 
-`retention_count` est conserve (0/negatif devient 1 ; valeur invalide devient 5).
-`backup_nas_sync.sync_now` disparait : adapter les automatisations et boutons a
-l'interface native, sans appel de service de remplacement implicite.
+Avant la mise a jour, realiser une sauvegarde de la configuration Home
+Assistant. La migration conserve la connexion DSM, le site, le dossier cible
+et la retention. Les anciens reglages de scan local sont retires :
+`local_backup_dir`, `poll_interval` et `stable_seconds`.
 
-Les unique_id des deux entites sont inchanges : `*_dernier_controle` et
-`*_probleme`. Les entity_id existants restent au registre. `last_checked` signifie
-maintenant dernier transfert agent. Les checksums et echecs consecutifs restent
-exposes ; `avertissement_retention` distingue une purge incomplete d'un transfert
-echoue. L'etat natif est stocke separement du dernier resultat de polling v0.4.0.
-L'exemple `examples/dashboard.yaml` ouvre les sauvegardes natives et affiche ces
-anomalies. Le premier resultat reste idle jusqu'au premier transfert.
+A partir de v0.5.0, les nouvelles sauvegardes passent exclusivement par le
+flux natif Home Assistant. Les anciennes archives ne sont ni importees dans la
+liste native ni supprimees automatiquement. Conservez-les jusqu'a avoir valide
+votre procedure de restauration.
 
-Les anciens tar ne sont ni importes dans la liste native, ni supprimes par la
-nouvelle retention. Les conserver pour restauration manuelle via HA et ne les
-purger qu'apres validation operateur. La retention concerne les nouveaux backups
-publies par cette entree ; des suppressions explicites dans HA restent possibles.
+Le service `backup_nas_sync.sync_now` n'est plus utilise : declenchez les
+sauvegardes depuis l'interface native de Home Assistant.
 
-## Integrite, reprise et retention
+## Exploitation et diagnostic
 
-Le namespace `bns-<sha256(entry_id)>-` isole les objets de cette entree. Les IDs
-sont haches ; chaque tentative ecrit un tar UUID distinct. Le JSON par backup_id
-contient les metadonnees HA, le nom tar et SHA-256 : seul ce marqueur rend une
-copie visible. Aucun fichier existant n'est ecrase par une tentative concurrente
-de cet agent (operations serialisees).
+- Une archive absente ou un NAS indisponible produit une erreur explicite ; une
+  liste vide n'est jamais retournee comme si tout etait sain.
+- Les fichiers incomplets ou les metadonnees invalides restent invisibles pour
+  la liste et ne sont pas supprimes automatiquement.
+- En cas d'echec de retention, le transfert verifie reste trace et une anomalie
+  est exposee pour intervention operateur.
+- Pour restaurer, utiliser le parcours de restauration Home Assistant et
+  verifier que l'archive est entierement telechargee avant de la considerer
+  integre.
 
-- Doublon identique : accepte apres reverification du contenu et de l'ancienne
-  copie ; conflit meme ID / contenu ou metadonnees differents : refuse.
-- Archive absente : BackupNotFound ; NAS inaccessible : erreur, jamais liste vide.
-- Archive corrompue au download : erreur de checksum en fin de flux ; ne pas utiliser
-  un telechargement interrompu avant sa fin comme preuve d'integrite.
-- Metadonnees invalides : erreur explicite, retention bloquee par prudence.
-- Upload interrompu : nettoyage best effort de l'objet non publie ; retry autorise.
-- Publication JSON ambigue : conserver le tar verifie (ne pas risquer de detruire
-  un backup effectivement publie). Retry accepte si JSON valide ; JSON corrompu
-  impose inspection/reparation manuelle, aucun ecrasement automatique.
-- Crash : objets sans sidecar ignores par la liste/retention. Apres arret des
-  transferts, un operateur peut comparer les sidecars aux tar et supprimer seulement
-  les orphelins prouves du namespace. Aucun nettoyage global automatique.
-- Retention : dates natives, sauvegarde courante protegee meme si ancienne ; erreurs
-  de suppression partielles signalees, transfert verifie reste OK. Une nouvelle
-  demande d'upload verifiee reessaie la retention (pas de timer concurrent).
+## Retour arriere
 
-## Rollback et validation
-
-Rollback : restaurer v0.4.0 et la configuration HA pre-migration, ou recreer une
-entree v1 avec ses anciennes options. Ne pas retrograder une entree v2 en place.
-Ne jamais effacer les archives natives lors du rollback ; conserver les sidecars
-et l'entry_id pour une reprise v0.5. Sur HAOS le rollback ne corrige pas le defaut
-historique d'acces au repertoire local.
-
-Tests locaux : `python3 -m unittest discover -s tests/backup_nas_sync -v` depuis
-le depot Factory. Ces mocks ne prouvent pas le chargement HA ni un vrai transfert.
-Pour #185, SANDBOX est deploye directement par le script ad hoc sur decision
-utilisateur. Avant DEV manuel : release beta HACS. Puis RECETTE et PROD manuelle.
-Le test final HAOS/PROD exige un GO PO distinct. Voir issue Factory #185 et sa
-specification `docs/ia/specs/185-backup-agent-natif.md`.
+Pour revenir a v0.4.x, restaurer egalement la configuration Home Assistant
+anterieure ou creer une nouvelle entree compatible v0.4.x. Ne pas retrograder
+une entree v0.5.0 en place et ne pas effacer les archives natives pendant cette
+operation.
