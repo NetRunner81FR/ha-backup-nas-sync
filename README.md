@@ -1,9 +1,9 @@
 # NR Backup NAS Sync - native BackupAgent
 
-Candidate **0.5.0-beta.1**, Home Assistant **2026.9.3 minimum**.
-Cycle reel SANDBOX (upload natif, round-trip SHA-256, reprise apres restart)
-valide le 2026-09-29 ; l'UI Backup affiche encore une erreur d'une autre
-destination Synology DSM. Ne pas installer en PROD sur cette base. Aucun secret NAS supplementaire n'est demande.
+Version stable **0.5.0**, Home Assistant **2026.9.3 minimum**.
+Validation DEV : upload natif, round-trip SHA-256, suppression explicite QA
+bornee et reprise apres restart. La prevalidation RECETTE de la destination
+Synology DSM reste a corriger avant tout deploiement PROD manuel. Aucun secret NAS supplementaire n'est demande.
 
 ## Fonctionnement
 

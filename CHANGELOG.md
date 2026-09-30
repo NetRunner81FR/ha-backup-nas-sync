@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 - release stable #185
+
+- Stabilise la migration native BackupAgent avec le correctif asyncio de 0.5.0-beta.2.
+- Validation DEV reelle : upload et verification round-trip SHA-256, puis suppression
+  explicite bornee d'un backup QA avec conservation du temoin.
+- La publication de cette release n'est pas un deploiement PROD : le preflight
+  RECETTE de la destination Synology DSM doit encore etre corrige et valide avant
+  toute installation PROD manuelle.
+
 ## 0.5.0-beta.2 - correction asyncio #185
 
 - Ouvre et ferme le lecteur temporaire de l'upload FileStation dans
